@@ -223,17 +223,12 @@ details summary { cursor: pointer; color: var(--primary); }
       <div class="card">
         <h2>打卡時間規則</h2>
         <form id="rulesForm">
-          <div class="grid2">
-            <div><label>上班:區間開始</label><input type="time" id="rInS" required></div>
-            <div><label>上班:區間結束</label><input type="time" id="rInE" required></div>
-          </div>
-          <label>上班:區間內一律計為</label><input type="time" id="rInC" required>
-          <div class="grid2">
-            <div><label>下班:區間開始</label><input type="time" id="rOutS" required></div>
-            <div><label>下班:區間結束</label><input type="time" id="rOutE" required></div>
-          </div>
-          <label>下班:區間內一律計為</label><input type="time" id="rOutC" required>
-          <p class="muted">區間以外的打卡,依實際打卡時間計算。規則變更只影響之後的打卡。</p>
+          <p class="muted">不論幾點上下班,都以「半小時」為單位,依打卡的分鐘數取整:</p>
+          <label>上班:幾分(含)以內算整點(:00)</label><input type="number" id="rInZ" min="0" max="29" required>
+          <label>上班:幾分(含)以內算半點(:30);超過則進位到下一個整點</label><input type="number" id="rInH" min="1" max="59" required>
+          <label>下班:幾分(含)以內算整點(:00)</label><input type="number" id="rOutZ" min="0" max="29" required>
+          <label>下班:幾分(含)以內算半點(:30);超過則進位到下一個整點</label><input type="number" id="rOutH" min="1" max="59" required>
+          <p class="muted">預設:上班 4 / 35、下班 20 / 50。<br>例:上班 10:05~10:35 計 10:30,10:36~11:04 計 11:00;下班 16:00~16:20 計 16:00,16:21~16:50 計 16:30,16:51~17:20 計 17:00。規則變更只影響之後的打卡。</p>
           <button type="submit">儲存規則</button>
         </form>
       </div>
@@ -267,10 +262,7 @@ details summary { cursor: pointer; color: var(--primary); }
 const API = window.__GH_API || 'https://api.github.com';
 const TZ = 'Asia/Taipei';
 const PBKDF2_ITER = 150000;
-const DEFAULT_SETTINGS = {
-  inStart: '10:05', inEnd: '10:35', inCount: '10:30',
-  outStart: '16:00', outEnd: '16:20', outCount: '16:00',
-};
+const DEFAULT_SETTINGS = { inZeroEnd: 4, inHalfEnd: 35, outZeroEnd: 20, outHalfEnd: 50 };
 const enc = new TextEncoder();
 const dec = new TextDecoder();
 
@@ -332,11 +324,16 @@ const toMin = (t) => { const [h, m] = String(t).split(':').map(Number); return h
 const fromMin = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 
 /* ---------- 打卡規則 ---------- */
-// 上班 10:05~10:35 -> 10:30;下班 16:00~16:20 -> 16:00;範圍外照實際時間
+// 以半小時為單位,每個整點小時內依「分鐘」判斷(不論幾點上班都一樣):
+// 上班:0~4 分 → 整點;5~35 分 → 半點;36~59 分 → 下個整點   (例:10:05~10:35 → 10:30)
+// 下班:0~20 分 → 整點;21~50 分 → 半點;51~59 分 → 下個整點 (例:16:00~16:20 → 16:00)
 function countedTime(raw, kind, st) {
-  const [a, b, c] = kind === 'in' ? [st.inStart, st.inEnd, st.inCount] : [st.outStart, st.outEnd, st.outCount];
-  const r = toMin(raw);
-  return r >= toMin(a) && r <= toMin(b) ? c : raw;
+  const s = { ...DEFAULT_SETTINGS, ...(st || {}) };
+  const m = toMin(raw), h = Math.floor(m / 60), mm = m % 60;
+  const [zeroEnd, halfEnd] = kind === 'in' ? [s.inZeroEnd, s.inHalfEnd] : [s.outZeroEnd, s.outHalfEnd];
+  if (mm <= zeroEnd) return fromMin(h * 60);
+  if (mm <= halfEnd) return fromMin(h * 60 + 30);
+  return fromMin((h + 1) * 60);
 }
 function workMin(r) {
   if (!r.in || !r.out) return 0;
@@ -849,8 +846,8 @@ $('btnAdd').onclick = () => {
   formDialog('補登打卡', [
     { k: 'emp', label: '員工', options: list.map((e) => [e.id, e.name]), value: $('fEmp').value || list[0].id },
     { k: 'date', label: '日期', type: 'date', value: taipei().date, required: true },
-    { k: 'in', label: '上班時間(計入)', type: 'time', value: meta.settings.inCount, required: true },
-    { k: 'out', label: '下班時間(計入)', type: 'time', value: meta.settings.outCount },
+    { k: 'in', label: '上班時間(計入)', type: 'time', value: '10:30', required: true },
+    { k: 'out', label: '下班時間(計入)', type: 'time', value: '16:00' },
   ], async (v) => {
     const emp = getEmp(v.emp);
     if (!v.date) throw new Error('請選擇日期');
@@ -878,13 +875,13 @@ $('btnCsv').onclick = () => {
 };
 
 /* ---------- 系統設定 ---------- */
-const ruleIds = { inStart: 'rInS', inEnd: 'rInE', inCount: 'rInC', outStart: 'rOutS', outEnd: 'rOutE', outCount: 'rOutC' };
+const ruleIds = { inZeroEnd: 'rInZ', inHalfEnd: 'rInH', outZeroEnd: 'rOutZ', outHalfEnd: 'rOutH' };
 function renderRules() { for (const [k, id] of Object.entries(ruleIds)) $(id).value = meta.settings[k]; }
 $('rulesForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   try {
-    const s = {}; for (const [k, id] of Object.entries(ruleIds)) s[k] = $(id).value;
-    if (toMin(s.inStart) > toMin(s.inEnd) || toMin(s.outStart) > toMin(s.outEnd)) throw new Error('區間開始時間不可晚於結束時間');
+    const s = {}; for (const [k, id] of Object.entries(ruleIds)) s[k] = Number($(id).value);
+    if (!(s.inZeroEnd < s.inHalfEnd) || !(s.outZeroEnd < s.outHalfEnd)) throw new Error('「整點」的分鐘數必須小於「半點」的分鐘數');
     await updateMeta((c) => { c.settings = s; }, 'update rules'); toast('規則已儲存');
   } catch (err) { toast(err.message, true); }
 });
