@@ -1,0 +1,932 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>員工打卡</title>
+<style>
+:root {
+  --bg: #f3f5f9; --card: #ffffff; --text: #1c2333; --muted: #6b7489; --line: #e1e5ee;
+  --primary: #2f6fed; --primary-d: #2459c7; --ok: #138a4b; --warn: #b7791f; --danger: #d03a3a;
+  --soft: #eef3ff; --radius: 14px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #11151f; --card: #1a2030; --text: #e8ecf5; --muted: #98a2b8; --line: #2a3246;
+    --primary: #5b8cff; --primary-d: #7aa1ff; --ok: #4fd18b; --warn: #e0b04f; --danger: #ff7a7a; --soft: #232c45;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.55 -apple-system, "Segoe UI", "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif; }
+[hidden] { display: none !important; }
+h1 { font-size: 1.5rem; margin: 0 0 .25rem; }
+h2 { font-size: 1.15rem; margin: 0 0 .75rem; }
+.muted { color: var(--muted); font-size: .9rem; }
+.wrap { max-width: 460px; margin: 0 auto; padding: 24px 16px 48px; }
+.wrap.wide { max-width: 1080px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 22px; margin-bottom: 16px; box-shadow: 0 2px 10px rgba(0,0,0,.04); }
+.center { text-align: center; }
+.clock { font-size: 2.6rem; font-weight: 700; letter-spacing: .02em; font-variant-numeric: tabular-nums; }
+.date { color: var(--muted); margin-bottom: 1rem; }
+input, select, button { font: inherit; }
+input, select { width: 100%; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--text); }
+input:focus, select:focus { outline: 2px solid var(--primary); border-color: transparent; }
+label { display: block; font-size: .88rem; color: var(--muted); margin: 12px 0 4px; }
+button { cursor: pointer; border: 0; border-radius: 10px; padding: 11px 18px; background: var(--primary); color: #fff; font-weight: 600; }
+button:hover { background: var(--primary-d); }
+button:disabled { opacity: .55; cursor: not-allowed; }
+button.ghost { background: transparent; color: var(--primary); border: 1px solid var(--line); }
+button.ghost:hover { background: var(--soft); }
+button.danger { background: var(--danger); }
+button.sm { padding: 5px 10px; font-size: .85rem; border-radius: 8px; }
+.big { width: 100%; padding: 18px; font-size: 1.25rem; border-radius: 14px; margin-top: 8px; }
+.big.out { background: #e0702f; }
+.big.out:hover { background: #c75f22; }
+.msg { margin-top: 12px; padding: 10px 14px; border-radius: 10px; font-size: .95rem; }
+.msg.err { background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); }
+.msg.ok { background: color-mix(in srgb, var(--ok) 15%, transparent); color: var(--ok); }
+.msg.info { background: var(--soft); color: var(--text); }
+.who { font-size: 1.2rem; font-weight: 600; }
+.status { display: flex; gap: 10px; margin: 14px 0; }
+.status > div { flex: 1; background: var(--soft); border-radius: 10px; padding: 10px; text-align: center; }
+.status b { display: block; font-size: 1.15rem; font-variant-numeric: tabular-nums; }
+.status span { font-size: .8rem; color: var(--muted); }
+table { width: 100%; border-collapse: collapse; font-size: .92rem; }
+th, td { padding: 8px 10px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; }
+th { color: var(--muted); font-weight: 600; font-size: .82rem; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+tr.total td { font-weight: 700; border-top: 2px solid var(--line); }
+.scroll { overflow-x: auto; }
+.tabs { display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap; }
+.tabs button { background: var(--card); color: var(--text); border: 1px solid var(--line); }
+.tabs button.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+.row { display: flex; gap: 10px; align-items: end; flex-wrap: wrap; }
+.row > div { flex: 1; min-width: 140px; }
+.row.fit > div { flex: 0 0 auto; }
+.topbar { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+.tag { display: inline-block; padding: 1px 8px; border-radius: 99px; font-size: .75rem; background: var(--soft); color: var(--muted); }
+.tag.warn { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
+.tag.off { background: color-mix(in srgb, var(--danger) 15%, transparent); color: var(--danger); }
+.actions { display: flex; gap: 6px; }
+dialog { border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); color: var(--text); padding: 22px; width: min(440px, 92vw); }
+dialog::backdrop { background: rgba(0,0,0,.45); }
+.dlg-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px; }
+.toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: #222; color: #fff; padding: 10px 18px; border-radius: 99px; z-index: 99; font-size: .95rem; max-width: 90vw; }
+.toast.err { background: var(--danger); }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
+@media (max-width: 520px) { .grid2 { grid-template-columns: 1fr; } .clock { font-size: 2.2rem; } }
+details summary { cursor: pointer; color: var(--primary); }
+.pw { font-family: ui-monospace, Menlo, Consolas, monospace; }
+</style>
+</head>
+<body>
+<div class="wrap" id="empApp">
+  <div class="card center">
+    <h1>員工打卡</h1>
+    <div class="date" id="date">&nbsp;</div>
+    <div class="clock" id="clock">--:--:--</div>
+  </div>
+
+  <div id="viewLoading" class="card center muted">載入中…</div>
+
+  <div id="viewSetup" class="card" hidden>
+    <div class="msg info">系統尚未完成設定,請管理員先開啟 <a href="#admin">管理後台</a> 進行初始設定。</div>
+  </div>
+
+  <div id="viewLogin" class="card" hidden>
+    <form id="loginForm" autocomplete="off">
+      <label for="pw" style="margin-top:0">請輸入你的密碼</label>
+      <input id="pw" type="password" autocomplete="off" inputmode="text" placeholder="密碼" required>
+      <button class="big" id="loginBtn" type="submit">登入</button>
+    </form>
+    <div id="loginMsg"></div>
+    <p class="muted center" style="margin:14px 0 0"><a href="#admin" class="muted">管理員登入</a></p>
+  </div>
+
+  <div id="viewMain" hidden>
+    <div class="card">
+      <div class="who" id="who"></div>
+      <div class="status">
+        <div><span>今日上班</span><b id="stIn">--:--</b></div>
+        <div><span>今日下班</span><b id="stOut">--:--</b></div>
+      </div>
+      <button class="big" id="punchBtn" type="button">打卡</button>
+      <div id="mainMsg"></div>
+      <p class="center" style="margin:12px 0 0"><button class="ghost sm" id="logoutBtn" type="button">登出</button></p>
+    </div>
+    <div class="card">
+      <h2>本月紀錄 <span class="muted" id="monthTotal"></span></h2>
+      <div class="scroll"><table>
+        <thead><tr><th>日期</th><th>上班</th><th>下班</th><th class="num">工時</th></tr></thead>
+        <tbody id="myRows"></tbody>
+      </table></div>
+    </div>
+  </div>
+</div>
+
+<div id="admApp" hidden><div class="wrap" id="root">
+  <div class="card center muted" id="vLoading">載入中…</div>
+
+  <!-- 初始設定 -->
+  <div class="card" id="vSetup" hidden>
+    <h1>初始設定</h1>
+    <p class="muted">第一次使用,請依 README 準備好一個公開 repo 與一組 Token。</p>
+    <form id="setupForm" autocomplete="off">
+      <label>repo(公開,放這個網頁)格式:帳號/repo名稱</label>
+      <input id="sPages" required placeholder="例如 myname/attendance">
+      <label>GitHub Token(只需有這個 repo 的 Contents 讀寫權限)</label>
+      <input id="sAdminTok" type="password" required autocomplete="off">
+      <label>管理員密碼(至少 8 個字元,請務必記住,無法找回)</label>
+      <input id="sPw" type="password" minlength="8" required autocomplete="new-password">
+      <label>再輸入一次管理員密碼</label>
+      <input id="sPw2" type="password" minlength="8" required autocomplete="new-password">
+      <button class="big" id="setupBtn" type="submit">完成設定</button>
+    </form>
+    <div id="setupMsg"></div>
+  </div>
+
+  <!-- 登入 -->
+  <div class="card" id="vLogin" hidden>
+    <h1>管理後台</h1>
+    <form id="aLoginForm" autocomplete="off">
+      <label for="lpw">管理員密碼</label>
+      <input id="lpw" type="password" required autocomplete="off">
+      <button class="big" id="aLoginBtn" type="submit">登入</button>
+    </form>
+    <div id="aLoginMsg"></div>
+    <p class="muted center" style="margin:14px 0 0"><a href="#" class="muted">← 回員工打卡頁</a></p>
+  </div>
+
+  <!-- 主畫面 -->
+  <div id="vMain" hidden>
+    <div class="topbar">
+      <h1 style="margin:0">管理後台</h1>
+      <div class="actions"><a href="#"><button class="ghost sm" type="button">員工打卡頁</button></a><button class="ghost sm" id="logoutBtn" type="button">登出</button></div>
+    </div>
+    <div class="tabs" id="tabs">
+      <button data-tab="stats" class="active">統計與打卡紀錄</button>
+      <button data-tab="emps">員工管理</button>
+      <button data-tab="settings">系統設定</button>
+    </div>
+
+    <!-- 統計 -->
+    <section id="tab-stats">
+      <div class="card">
+        <div class="row">
+          <div><label>月份</label><input type="month" id="fMonth"></div>
+          <div><label>員工</label><select id="fEmp"></select></div>
+          <div class="fit" style="flex:0 0 auto"><button id="btnAdd" type="button">＋ 補登打卡</button></div>
+          <div class="fit" style="flex:0 0 auto"><button class="ghost" id="btnCsv" type="button">匯出 CSV</button></div>
+        </div>
+      </div>
+      <div class="card">
+        <h2>當月統計</h2>
+        <div class="scroll"><table>
+          <thead><tr><th>員工</th><th class="num">時薪</th><th class="num">出勤天數</th><th class="num">總工時</th><th class="num">應付薪資</th></tr></thead>
+          <tbody id="sumRows"></tbody>
+        </table></div>
+      </div>
+      <div class="card">
+        <h2>打卡明細</h2>
+        <div class="scroll"><table>
+          <thead><tr><th>日期</th><th>員工</th><th>上班(實際→計)</th><th>下班(實際→計)</th><th class="num">工時</th><th class="num">時薪</th><th class="num">薪資</th><th></th></tr></thead>
+          <tbody id="detRows"></tbody>
+        </table></div>
+      </div>
+    </section>
+
+    <!-- 員工 -->
+    <section id="tab-emps" hidden>
+      <div class="card">
+        <h2>新增員工</h2>
+        <form id="addEmpForm" autocomplete="off">
+          <div class="row">
+            <div><label>姓名</label><input id="aName" required></div>
+            <div><label>登入密碼(至少 6 字元,不可與他人重複)</label><input id="aPw" required minlength="6" autocomplete="off"></div>
+            <div><label>時薪 (NT$)</label><input id="aWage" type="number" min="0" step="1" required></div>
+            <div style="flex:0 0 auto"><button id="aBtn" type="submit">新增</button></div>
+          </div>
+        </form>
+        <div class="muted" style="margin-top:8px">新增或修改密碼後,約需 1~2 分鐘(GitHub Pages 重新部署)員工才能用新密碼登入。</div>
+      </div>
+      <div class="card">
+        <h2>員工列表</h2>
+        <div class="scroll"><table>
+          <thead><tr><th>姓名</th><th>密碼</th><th class="num">時薪</th><th>狀態</th><th></th></tr></thead>
+          <tbody id="empRows"></tbody>
+        </table></div>
+      </div>
+    </section>
+
+    <!-- 設定 -->
+    <section id="tab-settings" hidden>
+      <div class="card">
+        <h2>打卡時間規則</h2>
+        <form id="rulesForm">
+          <div class="grid2">
+            <div><label>上班:區間開始</label><input type="time" id="rInS" required></div>
+            <div><label>上班:區間結束</label><input type="time" id="rInE" required></div>
+          </div>
+          <label>上班:區間內一律計為</label><input type="time" id="rInC" required>
+          <div class="grid2">
+            <div><label>下班:區間開始</label><input type="time" id="rOutS" required></div>
+            <div><label>下班:區間結束</label><input type="time" id="rOutE" required></div>
+          </div>
+          <label>下班:區間內一律計為</label><input type="time" id="rOutC" required>
+          <p class="muted">區間以外的打卡,依實際打卡時間計算。規則變更只影響之後的打卡。</p>
+          <button type="submit">儲存規則</button>
+        </form>
+      </div>
+      <div class="card">
+        <h2>更新 Token</h2>
+        <p class="muted">GitHub 的 Token 會過期。到期前產生新的 Token,在這裡貼上即可。</p>
+        <form id="tokForm" autocomplete="off">
+          <label>新的 GitHub Token</label><input id="tAdmin" type="password" autocomplete="off" required>
+          <button type="submit" style="margin-top:12px">更新 Token</button>
+        </form>
+      </div>
+      <div class="card">
+        <h2>更換管理員密碼</h2>
+        <form id="pwForm" autocomplete="off">
+          <label>新密碼(至少 8 字元)</label><input id="npw" type="password" minlength="8" autocomplete="new-password">
+          <label>再輸入一次</label><input id="npw2" type="password" minlength="8" autocomplete="new-password">
+          <button type="submit" style="margin-top:12px">更換密碼</button>
+        </form>
+      </div>
+    </section>
+  </div>
+</div>
+</div>
+<dialog id="dlg"></dialog>
+
+
+<script>
+'use strict';
+/* 共用函式庫:時間規則、加解密、GitHub 儲存 */
+
+const API = window.__GH_API || 'https://api.github.com';
+const TZ = 'Asia/Taipei';
+const PBKDF2_ITER = 150000;
+const DEFAULT_SETTINGS = {
+  inStart: '10:05', inEnd: '10:35', inCount: '10:30',
+  outStart: '16:00', outEnd: '16:20', outCount: '16:00',
+};
+const enc = new TextEncoder();
+const dec = new TextDecoder();
+
+/* ---------- 基本工具 ---------- */
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const $ = (id) => document.getElementById(id);
+
+function bytesToB64(bytes) {
+  let s = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+function b64ToBytes(b) {
+  const s = atob(String(b).replace(/\s/g, ''));
+  const u = new Uint8Array(s.length);
+  for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i);
+  return u;
+}
+
+/* ---------- 加解密 (PBKDF2 + AES-GCM) ---------- */
+async function deriveKey(pw, salt) {
+  const km = await crypto.subtle.importKey('raw', enc.encode(pw), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt, iterations: PBKDF2_ITER, hash: 'SHA-256' },
+    km, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+}
+async function seal(pw, plaintext) {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const key = await deriveKey(pw, salt);
+  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, enc.encode(plaintext));
+  return { s: bytesToB64(salt), i: bytesToB64(iv), c: bytesToB64(new Uint8Array(ct)) };
+}
+async function open(pw, blob) {
+  try {
+    const key = await deriveKey(pw, b64ToBytes(blob.s));
+    const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64ToBytes(blob.i) }, key, b64ToBytes(blob.c));
+    return dec.decode(pt);
+  } catch (e) { return null; }
+}
+
+/* ---------- 時間 (一律使用台北時間;優先採用 GitHub 伺服器時間防止改手機時間) ---------- */
+let clockOffset = 0;
+const nowDate = () => new Date(Date.now() + clockOffset);
+function syncClock(res) {
+  const d = res && res.headers && res.headers.get('Date');
+  if (d) { const t = new Date(d).getTime(); if (!isNaN(t)) clockOffset = t - Date.now(); }
+}
+const fmtTP = new Intl.DateTimeFormat('en-CA', {
+  timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit',
+  hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
+});
+function taipei(d = nowDate()) {
+  const p = {};
+  for (const x of fmtTP.formatToParts(d)) p[x.type] = x.value;
+  return { date: `${p.year}-${p.month}-${p.day}`, time: `${p.hour}:${p.minute}`, sec: p.second, ym: `${p.year}-${p.month}` };
+}
+const toMin = (t) => { const [h, m] = String(t).split(':').map(Number); return h * 60 + m; };
+const fromMin = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+
+/* ---------- 打卡規則 ---------- */
+// 上班 10:05~10:35 -> 10:30;下班 16:00~16:20 -> 16:00;範圍外照實際時間
+function countedTime(raw, kind, st) {
+  const [a, b, c] = kind === 'in' ? [st.inStart, st.inEnd, st.inCount] : [st.outStart, st.outEnd, st.outCount];
+  const r = toMin(raw);
+  return r >= toMin(a) && r <= toMin(b) ? c : raw;
+}
+function workMin(r) {
+  if (!r.in || !r.out) return 0;
+  return Math.max(0, toMin(r.out) - toMin(r.in));
+}
+function recPay(r, emp) {
+  const w = r.wage ?? (emp && emp.wage) ?? 0;
+  return Math.round((workMin(r) / 60) * w);
+}
+const fmtHM = (min) => `${Math.floor(min / 60)} 小時 ${min % 60} 分`;
+const fmtH = (min) => (min / 60).toFixed(2);
+const money = (n) => 'NT$ ' + Number(n).toLocaleString('en-US');
+const recPath = (ym) => `data/records/${ym}.json`;
+const META_PATH = 'data/employees.json';
+const rid = (p) => p + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+
+/* ---------- GitHub 儲存 ---------- */
+class GHError extends Error {
+  constructor(status, msg) { super(msg); this.status = status; }
+}
+class Store {
+  constructor(token, repo, dkey) { this.token = token; this.repo = repo; this.dkey = dkey || null; }
+
+  async req(method, path, body) {
+    let res;
+    try {
+      res = await fetch(API + path, {
+        method, cache: 'no-store',
+        headers: {
+          Authorization: 'Bearer ' + this.token,
+          Accept: 'application/vnd.github+json',
+          'X-GitHub-Api-Version': '2022-11-28',
+          ...(body ? { 'Content-Type': 'application/json' } : {}),
+        },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+    } catch (e) { throw new GHError(0, '網路連線失敗,請稍後再試'); }
+    syncClock(res);
+    if (res.ok || (method === 'GET' && res.status === 404)) return res;
+    let msg = '';
+    try { msg = (await res.json()).message; } catch (e) { /* ignore */ }
+    if (res.status === 401) msg = 'Token 無效或已過期,請通知管理員更新';
+    else if (res.status === 403 && /rate limit/i.test(msg || '')) msg = '請求過於頻繁,請稍後再試';
+    throw new GHError(res.status, msg || ('GitHub 錯誤 ' + res.status));
+  }
+
+  async checkRepo() {
+    const res = await this.req('GET', `/repos/${this.repo}`);
+    return res.status !== 404;
+  }
+
+  // plain=true:不加解密(例如 vault.json);預設資料檔一律 AES-GCM 加密
+  async read(path, plain) {
+    const res = await this.req('GET', `/repos/${this.repo}/contents/${path}`);
+    if (res.status === 404) return { data: null, sha: null };
+    const j = await res.json();
+    let data = JSON.parse(dec.decode(b64ToBytes(j.content)));
+    if (this.dkey && !plain) {
+      try {
+        const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64ToBytes(data.i) }, this.dkey, b64ToBytes(data.c));
+        data = JSON.parse(dec.decode(pt));
+      } catch (e) { throw new Error('資料解密失敗(金鑰不符)'); }
+    }
+    return { data, sha: j.sha };
+  }
+
+  async write(path, data, sha, message, plain) {
+    let out = data;
+    if (this.dkey && !plain) {
+      const iv = crypto.getRandomValues(new Uint8Array(12));
+      const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, this.dkey, enc.encode(JSON.stringify(data)));
+      out = { v: 1, i: bytesToB64(iv), c: bytesToB64(new Uint8Array(ct)) };
+    }
+    const body = { message, content: bytesToB64(enc.encode(JSON.stringify(out, null, 1))) };
+    if (sha) body.sha = sha;
+    return this.req('PUT', `/repos/${this.repo}/contents/${path}`, body);
+  }
+
+  // 讀取 -> 修改 -> 寫回;遇到同時寫入衝突會自動重試
+  async mutate(path, fn, message, init) {
+    let last;
+    for (let t = 0; t < 6; t++) {
+      const { data, sha } = await this.read(path);
+      const cur = data ?? (init ? init() : {});
+      const result = await fn(cur);
+      try {
+        await this.write(path, cur, sha, message);
+        return result;
+      } catch (e) {
+        last = e;
+        if (e.status === 409 || e.status === 422) { await new Promise((r) => setTimeout(r, 200 + Math.random() * 400)); continue; }
+        throw e;
+      }
+    }
+    throw last || new Error('儲存失敗,請重試');
+  }
+}
+async function genDataKey() {
+  const k = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']);
+  return bytesToB64(new Uint8Array(await crypto.subtle.exportKey('raw', k)));
+}
+const importDataKey = (b64) => crypto.subtle.importKey('raw', b64ToBytes(b64), 'AES-GCM', false, ['encrypt', 'decrypt']);
+const initMeta = () => ({ settings: { ...DEFAULT_SETTINGS }, employees: [] });
+const initRecords = () => ({ records: [] });
+
+async function loadVault() {
+  try {
+    const r = await fetch('vault.json?t=' + Date.now(), { cache: 'no-store' });
+    if (!r.ok) return null;
+    return await r.json();
+  } catch (e) { return null; }
+}
+
+</script>
+<script>
+(function () {
+let vault = null, store = null, me = null, meta = null, idleTimer = null, resetTimer = null;
+const show = (id) => { ['viewLoading', 'viewSetup', 'viewLogin', 'viewMain'].forEach((v) => $(v).hidden = v !== id); };
+const msg = (el, text, cls) => { el.innerHTML = text ? `<div class="msg ${cls}">${esc(text)}</div>` : ''; };
+
+// 時鐘
+const WD = ['日', '一', '二', '三', '四', '五', '六'];
+setInterval(tick, 500); tick();
+function tick() {
+  const t = taipei();
+  $('clock').textContent = `${t.time}:${t.sec}`;
+  const [y, m, d] = t.date.split('-').map(Number);
+  $('date').textContent = `${y} 年 ${m} 月 ${d} 日 星期${WD[new Date(Date.UTC(y, m - 1, d)).getUTCDay()]}`;
+}
+
+(async function init() {
+  vault = await loadVault();
+  if (!vault || !vault.app) return show('viewSetup');
+  show('viewLogin'); $('pw').focus();
+})();
+
+$('loginForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const pw = $('pw').value;
+  if (!pw) return;
+  const btn = $('loginBtn'); btn.disabled = true; btn.textContent = '驗證中…';
+  msg($('loginMsg'), '');
+  try {
+    vault = (await loadVault()) || vault;
+    let found = null;
+    for (const ent of vault.employees || []) {
+      const tok = await open(pw, ent);
+      if (tok) { found = { id: ent.id, token: tok }; break; }
+    }
+    if (!found) throw new Error('密碼錯誤');
+    const pl = JSON.parse(found.token);
+    store = new Store(pl.t, vault.app.repo, await importDataKey(pl.k));
+    const { data } = await store.read(META_PATH);
+    if (!data) throw new Error('找不到員工資料,請聯絡管理員');
+    meta = data;
+    me = meta.employees.find((x) => x.id === found.id);
+    if (!me || me.active === false) throw new Error('此帳號已停用');
+    $('pw').value = '';
+    await enterMain();
+  } catch (err) {
+    msg($('loginMsg'), err.message, 'err');
+    $('pw').select();
+  } finally { btn.disabled = false; btn.textContent = '登入'; }
+});
+
+async function loadMonth() {
+  const t = taipei();
+  const { data } = await store.read(recPath(t.ym));
+  const recs = (data && data.records || []).filter((r) => r.emp === me.id).sort((a, b) => a.date.localeCompare(b.date));
+  return { t, recs };
+}
+
+async function enterMain() {
+  const { t, recs } = await loadMonth();
+  $('who').textContent = `${me.name},你好`;
+  renderMain(t, recs);
+  show('viewMain');
+  msg($('mainMsg'), '');
+  armIdle(90000);
+}
+
+function renderMain(t, recs) {
+  const today = recs.find((r) => r.date === t.date);
+  $('stIn').textContent = today && today.in ? today.in : '--:--';
+  $('stOut').textContent = today && today.out ? today.out : '--:--';
+  const b = $('punchBtn');
+  b.disabled = false; b.className = 'big';
+  if (!today) { b.textContent = '上班打卡'; b.dataset.mode = 'in'; }
+  else if (today.in && !today.out) { b.textContent = '下班打卡'; b.className = 'big out'; b.dataset.mode = 'out'; }
+  else { b.textContent = '今日已完成打卡'; b.disabled = true; b.dataset.mode = ''; }
+  let total = 0;
+  $('myRows').innerHTML = recs.map((r) => {
+    total += workMin(r);
+    return `<tr><td>${esc(r.date.slice(5))}</td><td>${esc(r.in || '--')}</td><td>${esc(r.out || '--')}</td><td class="num">${r.out ? fmtH(workMin(r)) + ' h' : '—'}</td></tr>`;
+  }).join('') || '<tr><td colspan="4" class="muted">本月尚無紀錄</td></tr>';
+  $('monthTotal').textContent = recs.length ? `(累計 ${fmtH(total)} 小時)` : '';
+}
+
+$('punchBtn').addEventListener('click', async () => {
+  const b = $('punchBtn'); const mode = b.dataset.mode;
+  if (!mode) return;
+  b.disabled = true; msg($('mainMsg'), '');
+  clearTimeout(idleTimer);
+  try {
+    const result = await store.mutate(recPath(taipei().ym), (cur) => {
+      cur.records = cur.records || [];
+      const n = taipei();
+      const rec = cur.records.find((r) => r.emp === me.id && r.date === n.date);
+      if (mode === 'in') {
+        if (rec) throw new Error('今天已經打過上班卡了');
+        const counted = countedTime(n.time, 'in', meta.settings);
+        cur.records.push({ id: rid('r'), emp: me.id, date: n.date, in: counted, inRaw: n.time, out: null, outRaw: null, wage: me.wage });
+        return { type: '上班', raw: n.time, counted };
+      }
+      if (!rec || !rec.in) throw new Error('找不到今天的上班紀錄');
+      if (rec.out) throw new Error('今天已經打過下班卡了');
+      const counted = countedTime(n.time, 'out', meta.settings);
+      rec.out = counted; rec.outRaw = n.time;
+      return { type: '下班', raw: n.time, counted };
+    }, `punch ${mode} ${me.id}`, initRecords);
+    const same = result.raw === result.counted;
+    msg($('mainMsg'), `${result.type}打卡成功!實際時間 ${result.raw}` + (same ? '' : `,計為 ${result.counted}`), 'ok');
+    const { t, recs } = await loadMonth();
+    renderMain(t, recs);
+    b.disabled = true;
+    clearTimeout(resetTimer);
+    resetTimer = setTimeout(logout, 15000);
+  } catch (err) {
+    msg($('mainMsg'), err.message, 'err');
+    try { const { t, recs } = await loadMonth(); renderMain(t, recs); } catch (e) { b.disabled = false; }
+    armIdle(90000);
+  }
+});
+
+function armIdle(ms) { clearTimeout(idleTimer); idleTimer = setTimeout(logout, ms); }
+function logout() {
+  clearTimeout(idleTimer); clearTimeout(resetTimer);
+  store = null; me = null; meta = null;
+  msg($('loginMsg'), ''); show('viewLogin'); $('pw').value = ''; $('pw').focus();
+}
+$('logoutBtn').addEventListener('click', logout);
+})();
+</script>
+<script>
+(function () {
+let vault = null, adminPw = null, secret = null; // secret = {a: 管理員token, e: 員工token, pw: {員工id: 密碼}}
+let pagesStore = null, dataStore = null, meta = null, records = [];
+const views = ['vLoading', 'vSetup', 'vLogin', 'vMain'];
+const showView = (id) => { views.forEach((v) => $(v).hidden = v !== id); $('root').classList.toggle('wide', id === 'vMain'); };
+const msg = (el, text, cls) => { el.innerHTML = text ? `<div class="msg ${cls}">${esc(text)}</div>` : ''; };
+function toast(text, err) {
+  const t = document.createElement('div'); t.className = 'toast' + (err ? ' err' : ''); t.textContent = text;
+  document.body.appendChild(t); setTimeout(() => t.remove(), err ? 5000 : 2500);
+}
+const empName = (id) => { const e = meta && meta.employees.find((x) => x.id === id); return e ? e.name : '(已刪除)'; };
+const getEmp = (id) => meta && meta.employees.find((x) => x.id === id);
+
+/* ---------- 通用表單對話框 ---------- */
+function formDialog(title, fields, onSubmit, okText = '儲存') {
+  const dlg = $('dlg');
+  dlg.innerHTML = `<form method="dialog" id="dForm"><h2>${esc(title)}</h2>` + fields.map((f) => {
+    const id = 'd_' + f.k;
+    if (f.options) return `<label for="${id}">${esc(f.label)}</label><select id="${id}" ${f.readonly ? 'disabled' : ''}>${f.options.map(([v, l]) => `<option value="${esc(v)}" ${v === f.value ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
+    return `<label for="${id}">${esc(f.label)}</label><input id="${id}" type="${f.type || 'text'}" value="${esc(f.value ?? '')}" ${f.readonly ? 'readonly' : ''} ${f.min != null ? `min="${f.min}"` : ''} ${f.step ? `step="${f.step}"` : ''} ${f.required ? 'required' : ''}>` + (f.hint ? `<div class="muted">${esc(f.hint)}</div>` : '');
+  }).join('') + `<div id="dMsg"></div><div class="dlg-actions"><button type="button" class="ghost" id="dCancel">取消</button><button type="submit" id="dOk">${esc(okText)}</button></div></form>`;
+  dlg.showModal();
+  $('dCancel').onclick = () => dlg.close();
+  $('dForm').onsubmit = async (e) => {
+    e.preventDefault();
+    const vals = {}; fields.forEach((f) => vals[f.k] = $('d_' + f.k).value);
+    const ok = $('dOk'); ok.disabled = true;
+    try { await onSubmit(vals); dlg.close(); } catch (err) { msg($('dMsg'), err.message, 'err'); } finally { ok.disabled = false; }
+  };
+}
+
+/* ---------- 啟動 ---------- */
+(async function init() {
+  vault = await loadVault();
+  if (!vault || !vault.admin) {
+    const h = location.hostname, seg = location.pathname.split('/')[1] || '';
+    if (h.endsWith('.github.io')) {
+      const owner = h.split('.')[0];
+      $('sPages').value = `${owner}/${seg && !seg.endsWith('.html') ? seg : owner + '.github.io'}`;
+    }
+    return showView('vSetup');
+  }
+  showView('vLogin'); $('lpw').focus();
+})();
+
+/* ---------- 初始設定 ---------- */
+$('setupForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const repo = $('sPages').value.trim(), at = $('sAdminTok').value.trim(), pw = $('sPw').value;
+  const btn = $('setupBtn'); btn.disabled = true; btn.textContent = '設定中…'; msg($('setupMsg'), '');
+  try {
+    if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) throw new Error('repo 格式需為「帳號/名稱」');
+    if (pw !== $('sPw2').value) throw new Error('兩次輸入的管理員密碼不一致');
+    if (pw.length < 8) throw new Error('管理員密碼至少 8 個字元');
+    const probe = new Store(at, repo);
+    if (!(await probe.checkRepo())) throw new Error('找不到這個 repo,或 Token 沒有它的權限');
+    const k = await genDataKey();
+    const st = new Store(at, repo, await importDataKey(k));
+    const m0 = await st.read(META_PATH, true); // 取得舊檔 sha(若有),重新設定會以新金鑰覆蓋
+    await st.write(META_PATH, initMeta(), m0.sha, 'init');
+    const v = { v: 2, app: { repo }, admin: await seal(pw, JSON.stringify({ a: at, k, pw: {} })), employees: [] };
+    const { sha } = await st.read('vault.json', true);
+    await st.write('vault.json', v, sha, 'init vault', true);
+    msg($('setupMsg'), '設定完成!約 1~2 分鐘後(GitHub Pages 重新部署)重新整理本頁即可登入。', 'ok');
+  } catch (err) { msg($('setupMsg'), err.message, 'err'); btn.disabled = false; btn.textContent = '完成設定'; }
+});
+
+/* ---------- 登入 ---------- */
+$('aLoginForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const btn = $('aLoginBtn'); btn.disabled = true; btn.textContent = '驗證中…'; msg($('aLoginMsg'), '');
+  try {
+    vault = (await loadVault()) || vault;
+    const pw = $('lpw').value;
+    const pt = await open(pw, vault.admin);
+    if (!pt) throw new Error('密碼錯誤');
+    secret = JSON.parse(pt); adminPw = pw;
+    pagesStore = dataStore = new Store(secret.a, vault.app.repo, await importDataKey(secret.k));
+    const r = await dataStore.read(META_PATH);
+    meta = r.data || initMeta();
+    meta.employees = meta.employees || []; meta.settings = { ...DEFAULT_SETTINGS, ...(meta.settings || {}) };
+    $('lpw').value = '';
+    $('fMonth').value = taipei().ym;
+    showView('vMain');
+    renderEmps(); renderRules(); fillEmpFilter();
+    await loadRecords();
+  } catch (err) { msg($('aLoginMsg'), err.message, 'err'); }
+  finally { btn.disabled = false; btn.textContent = '登入'; }
+});
+$('logoutBtn').onclick = () => { secret = adminPw = pagesStore = dataStore = meta = null; records = []; showView('vLogin'); $('lpw').focus(); };
+
+$('tabs').addEventListener('click', (e) => {
+  const t = e.target.dataset.tab; if (!t) return;
+  document.querySelectorAll('#tabs button').forEach((b) => b.classList.toggle('active', b === e.target));
+  ['stats', 'emps', 'settings'].forEach((x) => $('tab-' + x).hidden = x !== t);
+});
+
+/* ---------- 資料寫入工具 ---------- */
+async function updateMeta(fn, message) {
+  let out;
+  await dataStore.mutate(META_PATH, (cur) => { cur.employees = cur.employees || []; cur.settings = { ...DEFAULT_SETTINGS, ...(cur.settings || {}) }; fn(cur); out = cur; }, message, initMeta);
+  meta = out;
+}
+async function saveVault() {
+  vault.admin = await seal(adminPw, JSON.stringify(secret));
+  const { sha } = await pagesStore.read('vault.json', true);
+  await pagesStore.write('vault.json', vault, sha, 'update vault', true);
+}
+function checkPw(pw, exceptId) {
+  if (!pw || pw.length < 6) throw new Error('員工密碼至少 6 個字元');
+  if (pw === adminPw) throw new Error('不可與管理員密碼相同');
+  for (const [id, p] of Object.entries(secret.pw)) if (id !== exceptId && p === pw) throw new Error('此密碼已被其他員工使用,請換一個');
+}
+const setVaultEntry = async (id, pw) => {
+  vault.employees = vault.employees.filter((x) => x.id !== id);
+  vault.employees.push({ id, ...(await seal(pw, JSON.stringify({ t: secret.a, k: secret.k }))) });
+};
+
+/* ---------- 員工管理 ---------- */
+function renderEmps() {
+  $('empRows').innerHTML = meta.employees.map((e) => `<tr>
+    <td>${esc(e.name)}</td>
+    <td><span class="pw" data-pwid="${esc(e.id)}">••••••</span> <button class="ghost sm" data-act="showpw" data-id="${esc(e.id)}">顯示</button></td>
+    <td class="num">${money(e.wage)}</td>
+    <td>${e.active === false ? '<span class="tag off">已停用</span>' : '<span class="tag">在職</span>'}</td>
+    <td><div class="actions">
+      <button class="ghost sm" data-act="edit" data-id="${esc(e.id)}">改姓名/時薪</button>
+      <button class="ghost sm" data-act="pw" data-id="${esc(e.id)}">改密碼</button>
+      <button class="ghost sm" data-act="toggle" data-id="${esc(e.id)}">${e.active === false ? '啟用' : '停用'}</button>
+    </div></td></tr>`).join('') || '<tr><td colspan="5" class="muted">尚無員工</td></tr>';
+}
+function fillEmpFilter() {
+  const cur = $('fEmp').value;
+  $('fEmp').innerHTML = '<option value="">全部員工</option>' + meta.employees.map((e) => `<option value="${esc(e.id)}">${esc(e.name)}</option>`).join('');
+  $('fEmp').value = cur;
+}
+
+$('addEmpForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const name = $('aName').value.trim(), pw = $('aPw').value, wage = Number($('aWage').value);
+  const btn = $('aBtn'); btn.disabled = true;
+  try {
+    if (!name) throw new Error('請輸入姓名');
+    if (!(wage >= 0)) throw new Error('時薪格式錯誤');
+    checkPw(pw);
+    const id = rid('e');
+    await updateMeta((c) => c.employees.push({ id, name, wage, active: true }), `add employee ${id}`);
+    secret.pw[id] = pw;
+    await setVaultEntry(id, pw);
+    await saveVault();
+    $('addEmpForm').reset(); renderEmps(); fillEmpFilter(); renderStats();
+    toast('已新增員工,約 1~2 分鐘後可用新密碼登入');
+  } catch (err) { toast(err.message, true); }
+  finally { btn.disabled = false; }
+});
+
+$('empRows').addEventListener('click', async (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  const id = b.dataset.id, emp = getEmp(id);
+  if (b.dataset.act === 'showpw') {
+    const s = document.querySelector(`[data-pwid="${id}"]`);
+    const hidden = b.textContent === '顯示';
+    s.textContent = hidden ? (secret.pw[id] || '(未設定)') : '••••••'; b.textContent = hidden ? '隱藏' : '顯示';
+  } else if (b.dataset.act === 'edit') {
+    formDialog('修改員工資料', [
+      { k: 'name', label: '姓名', value: emp.name, required: true },
+      { k: 'wage', label: '時薪 (NT$)', type: 'number', value: emp.wage, min: 0, step: 1, required: true },
+    ], async (v) => {
+      if (!v.name.trim()) throw new Error('請輸入姓名');
+      const wage = Number(v.wage); if (!(wage >= 0)) throw new Error('時薪格式錯誤');
+      await updateMeta((c) => { const x = c.employees.find((y) => y.id === id); x.name = v.name.trim(); x.wage = wage; }, `edit employee ${id}`);
+      renderEmps(); fillEmpFilter(); renderStats(); toast('已更新(只影響之後的打卡;過去紀錄的時薪可在明細中修改)');
+    });
+  } else if (b.dataset.act === 'pw') {
+    formDialog(`修改「${emp.name}」的密碼`, [{ k: 'pw', label: '新密碼(至少 6 字元)', value: '', required: true }], async (v) => {
+      checkPw(v.pw, id);
+      secret.pw[id] = v.pw;
+      if (emp.active !== false) await setVaultEntry(id, v.pw);
+      await saveVault(); renderEmps(); toast('密碼已更新,約 1~2 分鐘後生效');
+    });
+  } else if (b.dataset.act === 'toggle') {
+    const turnOn = emp.active === false;
+    if (!turnOn && !confirm(`確定停用「${emp.name}」?停用後無法登入打卡,歷史紀錄保留。`)) return;
+    b.disabled = true;
+    try {
+      await updateMeta((c) => { c.employees.find((y) => y.id === id).active = turnOn; }, `toggle employee ${id}`);
+      if (turnOn) { if (!secret.pw[id]) throw new Error('請先為此員工設定密碼'); await setVaultEntry(id, secret.pw[id]); }
+      else vault.employees = vault.employees.filter((x) => x.id !== id);
+      await saveVault(); renderEmps(); toast(turnOn ? '已啟用' : '已停用');
+    } catch (err) { toast(err.message, true); renderEmps(); }
+  }
+});
+
+/* ---------- 統計與紀錄 ---------- */
+async function loadRecords() {
+  const ym = $('fMonth').value; if (!ym) return;
+  $('sumRows').innerHTML = $('detRows').innerHTML = '<tr><td colspan="8" class="muted">載入中…</td></tr>';
+  try {
+    const { data } = await dataStore.read(recPath(ym));
+    records = (data && data.records) || [];
+    renderStats();
+  } catch (err) { toast(err.message, true); }
+}
+$('fMonth').onchange = loadRecords; $('fEmp').onchange = renderStats;
+
+function filtered() {
+  const f = $('fEmp').value;
+  return records.filter((r) => !f || r.emp === f).sort((a, b) => a.date.localeCompare(b.date) || empName(a.emp).localeCompare(empName(b.emp)));
+}
+function renderStats() {
+  if (!meta) return;
+  const rows = filtered();
+  const by = {};
+  rows.forEach((r) => { (by[r.emp] = by[r.emp] || []).push(r); });
+  let tm = 0, tp = 0, td = 0;
+  const sum = Object.keys(by).map((id) => {
+    const list = by[id], emp = getEmp(id);
+    const done = list.filter((r) => r.out);
+    const mins = done.reduce((s, r) => s + workMin(r), 0), p = done.reduce((s, r) => s + recPay(r, emp), 0);
+    tm += mins; tp += p; td += done.length;
+    return `<tr><td>${esc(empName(id))}</td><td class="num">${emp ? money(emp.wage) : '-'}</td><td class="num">${done.length}</td><td class="num">${fmtH(mins)} h</td><td class="num">${money(p)}</td></tr>`;
+  });
+  $('sumRows').innerHTML = (sum.join('') + (sum.length > 1 ? `<tr class="total"><td>合計</td><td></td><td class="num">${td}</td><td class="num">${fmtH(tm)} h</td><td class="num">${money(tp)}</td></tr>` : '')) || '<tr><td colspan="5" class="muted">本月沒有紀錄</td></tr>';
+  const cell = (cnt, raw) => !cnt ? '<span class="tag warn">未打卡</span>' : (raw && raw !== cnt ? `${esc(raw)} → <b>${esc(cnt)}</b>` : `<b>${esc(cnt)}</b>`);
+  $('detRows').innerHTML = rows.map((r) => {
+    const emp = getEmp(r.emp);
+    return `<tr><td>${esc(r.date)}</td><td>${esc(empName(r.emp))}${r.edited ? ' <span class="tag">已修改</span>' : ''}</td>
+      <td>${cell(r.in, r.inRaw)}</td><td>${cell(r.out, r.outRaw)}</td>
+      <td class="num">${r.out ? fmtH(workMin(r)) + ' h' : '—'}</td><td class="num">${esc(r.wage ?? (emp && emp.wage) ?? '-')}</td><td class="num">${r.out ? money(recPay(r, emp)) : '—'}</td>
+      <td><div class="actions"><button class="ghost sm" data-act="edit" data-id="${esc(r.id)}">修改</button><button class="ghost sm" data-act="del" data-id="${esc(r.id)}">刪除</button></div></td></tr>`;
+  }).join('') || '<tr><td colspan="8" class="muted">本月沒有紀錄</td></tr>';
+}
+
+const okTime = (t) => /^\d{2}:\d{2}$/.test(t);
+$('detRows').addEventListener('click', (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  const r = records.find((x) => x.id === b.dataset.id); if (!r) return;
+  const path = recPath(r.date.slice(0, 7));
+  if (b.dataset.act === 'del') {
+    if (!confirm(`確定刪除 ${empName(r.emp)} 在 ${r.date} 的打卡紀錄?`)) return;
+    dataStore.mutate(path, (c) => { c.records = (c.records || []).filter((x) => x.id !== r.id); }, `delete record ${r.id}`, initRecords)
+      .then(() => { toast('已刪除'); return loadRecords(); }).catch((err) => toast(err.message, true));
+  } else {
+    formDialog(`修改打卡:${empName(r.emp)} ${r.date}`, [
+      { k: 'in', label: `上班時間(計入)　實際打卡:${r.inRaw || '—'}`, type: 'time', value: r.in || '', required: true },
+      { k: 'out', label: `下班時間(計入)　實際打卡:${r.outRaw || '—'}`, type: 'time', value: r.out || '', hint: '尚未下班可留空' },
+      { k: 'wage', label: '此筆時薪 (NT$)', type: 'number', value: r.wage ?? (getEmp(r.emp) || {}).wage ?? 0, min: 0, step: 1, required: true },
+    ], async (v) => {
+      if (!okTime(v.in)) throw new Error('請填寫上班時間');
+      if (v.out && !okTime(v.out)) throw new Error('下班時間格式錯誤');
+      if (v.out && toMin(v.out) < toMin(v.in)) throw new Error('下班時間不可早於上班時間');
+      await dataStore.mutate(path, (c) => {
+        const x = (c.records || []).find((y) => y.id === r.id); if (!x) throw new Error('找不到這筆紀錄(可能已被刪除)');
+        x.in = v.in; x.out = v.out || null; x.wage = Number(v.wage); x.edited = true;
+        if (!x.out) x.outRaw = null;
+      }, `edit record ${r.id}`, initRecords);
+      toast('已修改'); await loadRecords();
+    });
+  }
+});
+
+$('btnAdd').onclick = () => {
+  const act = meta.employees.filter((e) => e.active !== false);
+  if (!meta.employees.length) return toast('請先新增員工', true);
+  const list = act.length ? act : meta.employees;
+  formDialog('補登打卡', [
+    { k: 'emp', label: '員工', options: list.map((e) => [e.id, e.name]), value: $('fEmp').value || list[0].id },
+    { k: 'date', label: '日期', type: 'date', value: taipei().date, required: true },
+    { k: 'in', label: '上班時間(計入)', type: 'time', value: meta.settings.inCount, required: true },
+    { k: 'out', label: '下班時間(計入)', type: 'time', value: meta.settings.outCount },
+  ], async (v) => {
+    const emp = getEmp(v.emp);
+    if (!v.date) throw new Error('請選擇日期');
+    if (!okTime(v.in)) throw new Error('請填寫上班時間');
+    if (v.out && toMin(v.out) < toMin(v.in)) throw new Error('下班時間不可早於上班時間');
+    await dataStore.mutate(recPath(v.date.slice(0, 7)), (c) => {
+      c.records = c.records || [];
+      if (c.records.some((x) => x.emp === v.emp && x.date === v.date)) throw new Error('該員工當天已有紀錄,請直接修改');
+      c.records.push({ id: rid('r'), emp: v.emp, date: v.date, in: v.in, inRaw: null, out: v.out || null, outRaw: null, wage: emp.wage, edited: true });
+    }, `add record ${v.emp} ${v.date}`, initRecords);
+    toast('已補登'); $('fMonth').value = v.date.slice(0, 7); await loadRecords();
+  }, '新增');
+};
+
+$('btnCsv').onclick = () => {
+  const q = (s) => `"${String(s ?? '').replace(/"/g, '""')}"`;
+  const lines = [['日期', '員工', '上班實際', '上班計入', '下班實際', '下班計入', '工時(小時)', '時薪', '薪資'].map(q).join(',')];
+  filtered().forEach((r) => {
+    const emp = getEmp(r.emp), done = !!r.out;
+    lines.push([r.date, empName(r.emp), r.inRaw || '', r.in || '', r.outRaw || '', r.out || '', done ? fmtH(workMin(r)) : '', r.wage ?? (emp && emp.wage) ?? '', done ? recPay(r, emp) : ''].map(q).join(','));
+  });
+  const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `打卡紀錄_${$('fMonth').value}.csv`; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+};
+
+/* ---------- 系統設定 ---------- */
+const ruleIds = { inStart: 'rInS', inEnd: 'rInE', inCount: 'rInC', outStart: 'rOutS', outEnd: 'rOutE', outCount: 'rOutC' };
+function renderRules() { for (const [k, id] of Object.entries(ruleIds)) $(id).value = meta.settings[k]; }
+$('rulesForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  try {
+    const s = {}; for (const [k, id] of Object.entries(ruleIds)) s[k] = $(id).value;
+    if (toMin(s.inStart) > toMin(s.inEnd) || toMin(s.outStart) > toMin(s.outEnd)) throw new Error('區間開始時間不可晚於結束時間');
+    await updateMeta((c) => { c.settings = s; }, 'update rules'); toast('規則已儲存');
+  } catch (err) { toast(err.message, true); }
+});
+
+$('tokForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const ta = $('tAdmin').value.trim();
+  if (!ta) return toast('請貼上新的 Token', true);
+  const btn = e.submitter; btn.disabled = true;
+  try {
+    const ns = new Store(ta, vault.app.repo, await importDataKey(secret.k));
+    if (!(await ns.checkRepo())) throw new Error('新的 Token 沒有這個 repo 的權限');
+    secret.a = ta; pagesStore = dataStore = ns;
+    vault.employees = [];
+    for (const emp of meta.employees) if (emp.active !== false && secret.pw[emp.id]) await setVaultEntry(emp.id, secret.pw[emp.id]);
+    await saveVault(); $('tokForm').reset(); toast('Token 已更新,約 1~2 分鐘後生效');
+  } catch (err) { toast(err.message, true); }
+  finally { btn.disabled = false; }
+});
+
+$('pwForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const a = $('npw').value, b = $('npw2').value;
+  try {
+    if (a.length < 8) throw new Error('密碼至少 8 個字元');
+    if (a !== b) throw new Error('兩次輸入不一致');
+    if (Object.values(secret.pw).includes(a)) throw new Error('不可與員工密碼相同');
+    adminPw = a; await saveVault(); $('pwForm').reset(); toast('管理員密碼已更換');
+  } catch (err) { toast(err.message, true); }
+});
+})();
+</script>
+<script>
+
+function route() {
+  const isAdmin = location.hash === '#admin';
+  document.getElementById('empApp').hidden = isAdmin;
+  document.getElementById('admApp').hidden = !isAdmin;
+  document.title = isAdmin ? '打卡系統 · 管理後台' : '員工打卡';
+  window.scrollTo(0, 0);
+}
+window.addEventListener('hashchange', route); route();
+</script>
+</body>
+</html>
