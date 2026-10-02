@@ -111,6 +111,7 @@ details summary { cursor: pointer; color: var(--primary); }
         <div><span>今日下班</span><b id="stOut">--:--</b></div>
       </div>
       <button class="big" id="punchBtn" type="button">打卡</button>
+      <div id="geoBox" hidden style="margin-top:8px"></div>
       <div id="mainMsg"></div>
       <p class="center" style="margin:12px 0 0"><button class="ghost sm" id="logoutBtn" type="button">登出</button></p>
     </div>
@@ -233,6 +234,20 @@ details summary { cursor: pointer; color: var(--primary); }
         </form>
       </div>
       <div class="card">
+        <h2>防弊:GPS 定位</h2>
+        <form id="geoForm">
+          <label><input type="checkbox" id="gOn" style="width:auto;margin-right:8px">啟用:員工打卡時檢查是否在門市附近</label>
+          <div class="grid2">
+            <div><label>門市緯度</label><input id="gLat" type="number" step="any" placeholder="例如 25.0330"></div>
+            <div><label>門市經度</label><input id="gLng" type="number" step="any" placeholder="例如 121.5654"></div>
+          </div>
+          <label>允許半徑(公尺,建議 100~200)</label><input id="gRad" type="number" min="20" step="10" required>
+          <p style="margin:12px 0"><button class="ghost" id="gHere" type="button">使用目前位置作為門市位置</button></p>
+          <p class="muted">超出範圍或沒開定位時,員工仍可打卡,但該筆會在統計明細標記「位置異常」/「無定位」供你審核。請在門市現場用「使用目前位置」按鈕設定最準確。</p>
+          <button type="submit">儲存定位設定</button>
+        </form>
+      </div>
+      <div class="card">
         <h2>更新 Token</h2>
         <p class="muted">GitHub 的 Token 會過期。到期前產生新的 Token,在這裡貼上即可。</p>
         <form id="tokForm" autocomplete="off">
@@ -262,7 +277,7 @@ details summary { cursor: pointer; color: var(--primary); }
 const API = window.__GH_API || 'https://api.github.com';
 const TZ = 'Asia/Taipei';
 const PBKDF2_ITER = 150000;
-const DEFAULT_SETTINGS = { inZeroEnd: 4, inHalfEnd: 35, outZeroEnd: 20, outHalfEnd: 50 };
+const DEFAULT_SETTINGS = { inZeroEnd: 4, inHalfEnd: 35, outZeroEnd: 20, outHalfEnd: 50, geoOn: 0, geoLat: null, geoLng: null, geoRadius: 150 };
 const enc = new TextEncoder();
 const dec = new TextDecoder();
 
@@ -335,6 +350,31 @@ function countedTime(raw, kind, st) {
   if (mm <= halfEnd) return fromMin(h * 60 + 30);
   return fromMin((h + 1) * 60);
 }
+/* ---------- GPS 定位檢查 ---------- */
+function getGeo() {
+  return new Promise((res) => {
+    if (!navigator.geolocation) return res(null);
+    navigator.geolocation.getCurrentPosition(
+      (p) => res({ lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy }),
+      (err) => { window.lastGeoErr = err && err.code; res(null); }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
+  });
+}
+async function geoPermState() {
+  try { return (await navigator.permissions.query({ name: 'geolocation' })).state; } catch (e) { return 'unknown'; }
+}
+function distM(lat1, lng1, lat2, lng2) {
+  const R = 6371000, r = (x) => x * Math.PI / 180;
+  const a = Math.sin(r(lat2 - lat1) / 2) ** 2 + Math.cos(r(lat1)) * Math.cos(r(lat2)) * Math.sin(r(lng2 - lng1) / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+// 回傳 {d: 距離公尺, f: 'far'|'nogeo'|undefined};未啟用或未設定門市座標則不檢查
+function geoCheck(st, g) {
+  if (!st.geoOn || st.geoLat == null || st.geoLng == null) return {};
+  if (!g) return { f: 'nogeo' };
+  const d = Math.round(distM(g.lat, g.lng, Number(st.geoLat), Number(st.geoLng)));
+  return d <= Number(st.geoRadius) ? { d } : { d, f: 'far' };
+}
+
 function workMin(r) {
   if (!r.in || !r.out) return 0;
   return Math.max(0, toMin(r.out) - toMin(r.in));
@@ -509,6 +549,7 @@ async function loadMonth() {
 async function enterMain() {
   const { t, recs } = await loadMonth();
   $('who').textContent = `${me.name},你好`;
+  refreshGeoBox();
   renderMain(t, recs);
   show('viewMain');
   msg($('mainMsg'), '');
@@ -538,6 +579,9 @@ $('punchBtn').addEventListener('click', async () => {
   b.disabled = true; msg($('mainMsg'), '');
   clearTimeout(idleTimer);
   try {
+    const st = { ...DEFAULT_SETTINGS, ...meta.settings };
+    let gc = {};
+    if (st.geoOn) { msg($('mainMsg'), '定位中,請稍候…(請允許瀏覽器存取位置)', 'info'); gc = geoCheck(st, await getGeo()); msg($('mainMsg'), ''); }
     const result = await store.mutate(recPath(taipei().ym), (cur) => {
       cur.records = cur.records || [];
       const n = taipei();
@@ -545,17 +589,20 @@ $('punchBtn').addEventListener('click', async () => {
       if (mode === 'in') {
         if (rec) throw new Error('今天已經打過上班卡了');
         const counted = countedTime(n.time, 'in', meta.settings);
-        cur.records.push({ id: rid('r'), emp: me.id, date: n.date, in: counted, inRaw: n.time, out: null, outRaw: null, wage: me.wage });
+        cur.records.push({ id: rid('r'), emp: me.id, date: n.date, in: counted, inRaw: n.time, out: null, outRaw: null, wage: me.wage, inD: gc.d ?? null, inF: gc.f || null });
         return { type: '上班', raw: n.time, counted };
       }
       if (!rec || !rec.in) throw new Error('找不到今天的上班紀錄');
       if (rec.out) throw new Error('今天已經打過下班卡了');
       const counted = countedTime(n.time, 'out', meta.settings);
-      rec.out = counted; rec.outRaw = n.time;
+      rec.out = counted; rec.outRaw = n.time; rec.outD = gc.d ?? null; rec.outF = gc.f || null;
       return { type: '下班', raw: n.time, counted };
     }, `punch ${mode} ${me.id}`, initRecords);
     const same = result.raw === result.counted;
-    msg($('mainMsg'), `${result.type}打卡成功!實際時間 ${result.raw}` + (same ? '' : `,計為 ${result.counted}`), 'ok');
+    let note = '';
+    if (gc.f === 'far') note = `(提醒:你距離門市約 ${gc.d} 公尺,已標記為位置異常,將由管理員確認)`;
+    else if (gc.f === 'nogeo') { note = '(提醒:未取得定位,已標記為「無定位」,將由管理員確認)'; refreshGeoBox(); }
+    msg($('mainMsg'), `${result.type}打卡成功!實際時間 ${result.raw}` + (same ? '' : `,計為 ${result.counted}`) + note, gc.f ? 'info' : 'ok');
     const { t, recs } = await loadMonth();
     renderMain(t, recs);
     b.disabled = true;
@@ -568,6 +615,26 @@ $('punchBtn').addEventListener('click', async () => {
   }
 });
 
+async function refreshGeoBox() {
+  const box = $('geoBox');
+  if (!(meta && meta.settings && meta.settings.geoOn)) { box.hidden = true; return; }
+  box.hidden = false;
+  const st = await geoPermState();
+  if (st === 'granted') {
+    box.innerHTML = '<div class="msg ok">📍 定位已開啟</div>';
+  } else if (st === 'denied') {
+    box.innerHTML = `<div class="msg err"><b>定位權限被關閉,打卡會被標記為「無定位」</b>
+      <div style="margin-top:6px;font-size:.9rem">請依手機類型開啟,再按下方按鈕:<br>
+      <b>iPhone</b>:設定 → 隱私權與安全性 → 定位服務 → 開啟,並找到 Safari 網站 → 選「使用 App 時」<br>
+      <b>Android(Chrome)</b>:點網址列左邊的鎖頭/設定圖示 → 權限 → 位置 → 允許<br>
+      若是在 LINE 等 App 內開啟,請改用 Safari 或 Chrome 開啟本頁。</div>
+      <p style="margin:8px 0 0"><button class="sm" id="geoRetry" type="button">我已開啟,重新檢查</button></p></div>`;
+    $('geoRetry').onclick = async () => { $('geoRetry').disabled = true; await getGeo(); refreshGeoBox(); };
+  } else {
+    box.innerHTML = `<div class="msg info">本店打卡需要定位,請按「開啟定位」並選擇「允許」。<p style="margin:8px 0 0"><button class="sm" id="geoAsk" type="button">開啟定位</button></p></div>`;
+    $('geoAsk').onclick = async () => { $('geoAsk').disabled = true; await getGeo(); refreshGeoBox(); };
+  }
+}
 function armIdle(ms) { clearTimeout(idleTimer); idleTimer = setTimeout(logout, ms); }
 function logout() {
   clearTimeout(idleTimer); clearTimeout(resetTimer);
@@ -662,7 +729,7 @@ $('aLoginForm').addEventListener('submit', async (e) => {
     $('lpw').value = '';
     $('fMonth').value = taipei().ym;
     showView('vMain');
-    renderEmps(); renderRules(); fillEmpFilter();
+    renderEmps(); renderRules(); renderGeo(); fillEmpFilter();
     await loadRecords();
   } catch (err) { msg($('aLoginMsg'), err.message, 'err'); }
   finally { btn.disabled = false; btn.textContent = '登入'; }
@@ -801,11 +868,12 @@ function renderStats() {
     return `<tr><td>${esc(empName(id))}</td><td class="num">${emp ? money(emp.wage) : '-'}</td><td class="num">${done.length}</td><td class="num">${fmtH(mins)} h</td><td class="num">${money(p)}</td></tr>`;
   });
   $('sumRows').innerHTML = (sum.join('') + (sum.length > 1 ? `<tr class="total"><td>合計</td><td></td><td class="num">${td}</td><td class="num">${fmtH(tm)} h</td><td class="num">${money(tp)}</td></tr>` : '')) || '<tr><td colspan="5" class="muted">本月沒有紀錄</td></tr>';
-  const cell = (cnt, raw) => !cnt ? '<span class="tag warn">未打卡</span>' : (raw && raw !== cnt ? `${esc(raw)} → <b>${esc(cnt)}</b>` : `<b>${esc(cnt)}</b>`);
+  const flagTag = (f, d) => f === 'far' ? ` <span class="tag warn">位置異常 ${esc(d)}m</span>` : f === 'nogeo' ? ' <span class="tag warn">無定位</span>' : '';
+  const cell = (cnt, raw, f, d) => !cnt ? '<span class="tag warn">未打卡</span>' : (raw && raw !== cnt ? `${esc(raw)} → <b>${esc(cnt)}</b>` : `<b>${esc(cnt)}</b>`) + flagTag(f, d);
   $('detRows').innerHTML = rows.map((r) => {
     const emp = getEmp(r.emp);
     return `<tr><td>${esc(r.date)}</td><td>${esc(empName(r.emp))}${r.edited ? ' <span class="tag">已修改</span>' : ''}</td>
-      <td>${cell(r.in, r.inRaw)}</td><td>${cell(r.out, r.outRaw)}</td>
+      <td>${cell(r.in, r.inRaw, r.inF, r.inD)}</td><td>${cell(r.out, r.outRaw, r.outF, r.outD)}</td>
       <td class="num">${r.out ? fmtH(workMin(r)) + ' h' : '—'}</td><td class="num">${esc(r.wage ?? (emp && emp.wage) ?? '-')}</td><td class="num">${r.out ? money(recPay(r, emp)) : '—'}</td>
       <td><div class="actions"><button class="ghost sm" data-act="edit" data-id="${esc(r.id)}">修改</button><button class="ghost sm" data-act="del" data-id="${esc(r.id)}">刪除</button></div></td></tr>`;
   }).join('') || '<tr><td colspan="8" class="muted">本月沒有紀錄</td></tr>';
@@ -825,6 +893,7 @@ $('detRows').addEventListener('click', (e) => {
       { k: 'in', label: `上班時間(計入)　實際打卡:${r.inRaw || '—'}`, type: 'time', value: r.in || '', required: true },
       { k: 'out', label: `下班時間(計入)　實際打卡:${r.outRaw || '—'}`, type: 'time', value: r.out || '', hint: '尚未下班可留空' },
       { k: 'wage', label: '此筆時薪 (NT$)', type: 'number', value: r.wage ?? (getEmp(r.emp) || {}).wage ?? 0, min: 0, step: 1, required: true },
+      ...((r.inF || r.outF) ? [{ k: 'flag', label: '位置異常標記', options: [['keep', '保留標記'], ['clear', '已確認無誤,清除標記']], value: 'keep' }] : []),
     ], async (v) => {
       if (!okTime(v.in)) throw new Error('請填寫上班時間');
       if (v.out && !okTime(v.out)) throw new Error('下班時間格式錯誤');
@@ -832,6 +901,7 @@ $('detRows').addEventListener('click', (e) => {
       await dataStore.mutate(path, (c) => {
         const x = (c.records || []).find((y) => y.id === r.id); if (!x) throw new Error('找不到這筆紀錄(可能已被刪除)');
         x.in = v.in; x.out = v.out || null; x.wage = Number(v.wage); x.edited = true;
+        if (v.flag === 'clear') { x.inF = null; x.outF = null; }
         if (!x.out) x.outRaw = null;
       }, `edit record ${r.id}`, initRecords);
       toast('已修改'); await loadRecords();
@@ -876,13 +946,35 @@ $('btnCsv').onclick = () => {
 
 /* ---------- 系統設定 ---------- */
 const ruleIds = { inZeroEnd: 'rInZ', inHalfEnd: 'rInH', outZeroEnd: 'rOutZ', outHalfEnd: 'rOutH' };
+function renderGeo() {
+  const g = meta.settings;
+  $('gOn').checked = !!g.geoOn; $('gLat').value = g.geoLat ?? ''; $('gLng').value = g.geoLng ?? ''; $('gRad').value = g.geoRadius;
+}
+$('gHere').onclick = async () => {
+  $('gHere').disabled = true; $('gHere').textContent = '定位中…';
+  const g = await getGeo();
+  $('gHere').disabled = false; $('gHere').textContent = '使用目前位置作為門市位置';
+  if (!g) return toast('無法取得定位,請允許瀏覽器存取位置', true);
+  $('gLat').value = g.lat.toFixed(6); $('gLng').value = g.lng.toFixed(6);
+  toast(`已取得位置(精確度約 ${Math.round(g.acc)} 公尺),記得按「儲存定位設定」`);
+};
+$('geoForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  try {
+    const on = $('gOn').checked ? 1 : 0, lat = $('gLat').value, lng = $('gLng').value, rad = Number($('gRad').value);
+    if (on && (lat === '' || lng === '')) throw new Error('啟用前請先設定門市緯度、經度');
+    if (lat !== '' && (Math.abs(lat) > 90 || Math.abs(lng) > 180)) throw new Error('座標格式錯誤');
+    await updateMeta((c) => { c.settings = { ...c.settings, geoOn: on, geoLat: lat === '' ? null : Number(lat), geoLng: lng === '' ? null : Number(lng), geoRadius: rad }; }, 'update geo');
+    toast('定位設定已儲存');
+  } catch (err) { toast(err.message, true); }
+});
 function renderRules() { for (const [k, id] of Object.entries(ruleIds)) $(id).value = meta.settings[k]; }
 $('rulesForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   try {
     const s = {}; for (const [k, id] of Object.entries(ruleIds)) s[k] = Number($(id).value);
     if (!(s.inZeroEnd < s.inHalfEnd) || !(s.outZeroEnd < s.outHalfEnd)) throw new Error('「整點」的分鐘數必須小於「半點」的分鐘數');
-    await updateMeta((c) => { c.settings = s; }, 'update rules'); toast('規則已儲存');
+    await updateMeta((c) => { c.settings = { ...c.settings, ...s }; }, 'update rules'); toast('規則已儲存');
   } catch (err) { toast(err.message, true); }
 });
 
